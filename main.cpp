@@ -5,10 +5,12 @@
 #include <MPI.h>
 #include <random>
 #include <iomanip>
+#include <set>
 
 void radix_sort(double *array, size_t size) {
 
   std::vector<std::queue<uint64_t> > rad(65536);
+  std::set<uint64_t> usedIdx;
 
   auto *data = reinterpret_cast<uint64_t*>(array);
 
@@ -18,21 +20,21 @@ void radix_sort(double *array, size_t size) {
     for (size_t i = 0; i < size; i++) {
       uint64_t c = (data[i] & mask) >> (r * 16);
       rad[c].push(data[i]);
+      usedIdx.insert(c);
     }
 
     mask = mask << 16;
 
     size_t idx = 0;
 
-    for (size_t i = 0; i < 65536; i++) {
+    for (uint64_t i : usedIdx) {
       while (!rad[i].empty()) {
         data[idx++] = rad[i].front();
         rad[i].pop();
       }
     }
+    usedIdx.clear();
   }
-
-
 }
 
 void merge(const double* data, const int* sizes, const int* displacements, int p, int n, double* buffer) {
@@ -108,18 +110,18 @@ int main(int argc, char *argv[]) {
 
   auto *receiveBuffer = new double[receiveCount];
 
-  scatterStartTime = MPI_Wtime();
+//  scatterStartTime = MPI_Wtime();
   MPI_Scatterv(data, sizes, displacements, MPI_DOUBLE, receiveBuffer, receiveCount, MPI_DOUBLE, 0,
                MPI_COMM_WORLD);
-  scatterEndTime = MPI_Wtime();
+//  scatterEndTime = MPI_Wtime();
 
-  sortStartTime = MPI_Wtime();
+//  sortStartTime = MPI_Wtime();
   radix_sort(receiveBuffer, static_cast<size_t>(receiveCount));
-  sortEndTime = MPI_Wtime();
+//  sortEndTime = MPI_Wtime();
 
-  gatherStartTime = MPI_Wtime();
+//  gatherStartTime = MPI_Wtime();
   MPI_Gatherv(receiveBuffer, receiveCount, MPI_DOUBLE, data, sizes, displacements, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-  gatherEndTime = MPI_Wtime();
+//  gatherEndTime = MPI_Wtime();
 
   double* res = nullptr;
 
@@ -134,13 +136,15 @@ int main(int argc, char *argv[]) {
   endTime = MPI_Wtime();
 
   if (procId == 0) {
-    std::cout << endTime - startTime << std::endl;
-    std::cout << scatterEndTime - scatterStartTime << std::endl;
-    std::cout << gatherEndTime - gatherStartTime << std::endl;
-    std::cout << mergeEndTime - mergeStartTime << std::endl;
-    std::cout << sortEndTime - sortStartTime << std::endl;
-    std::cout << partSize << std::endl;
+    std::cout << "Total time " << endTime - startTime << std::endl;
+    std::cout << "Scatter took " << scatterEndTime - scatterStartTime << std::endl;
+    std::cout << "Gather took " << gatherEndTime - gatherStartTime << std::endl;
+    std::cout << "Merge took " << mergeEndTime - mergeStartTime << std::endl;
+//    std::cout << partSize << std::endl;
   }
+
+  std::cout << "For process " << procId << " radix_sort took " << sortEndTime - sortStartTime << std::endl;
+  std::cout << "Process " << procId << " sorted " << partSize << " items." << std::endl;
 
   MPI_Finalize();
 
