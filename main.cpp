@@ -2,10 +2,23 @@
 #include <cmath>
 #include <vector>
 #include <queue>
-#include <MPI.h>
+#include <mpi.h>
 #include <random>
 #include <iomanip>
 #include <set>
+#include <string>
+
+#ifdef __APPLE__
+#include <mach/thread_policy.h>
+#include <pthread.h>
+#include <mach/thread_act.h>
+#endif
+
+void set_proc_affinity(int cpu) {
+  thread_affinity_policy_data_t policy_data = { cpu };
+  int self = pthread_mach_thread_np(pthread_self());;
+  thread_policy_set(static_cast<thread_act_t>(self), THREAD_AFFINITY_POLICY, (thread_policy_t)&policy_data, THREAD_AFFINITY_POLICY_COUNT);
+}
 
 void radix_sort(double *array, size_t size) {
 
@@ -66,13 +79,17 @@ int main(int argc, char *argv[]) {
 
   int procId, procCount;
   double startTime, endTime;
-  double scatterStartTime, scatterEndTime;
-  double gatherStartTime, gatherEndTime;
-  double mergeStartTime, mergeEndTime;
-  double sortStartTime, sortEndTime;
+//  double scatterStartTime, scatterEndTime;
+//  double gatherStartTime, gatherEndTime;
+//  double mergeStartTime, mergeEndTime;
+//  double sortStartTime, sortEndTime;
 
   MPI_Comm_rank(MPI_COMM_WORLD, &procId);
   MPI_Comm_size(MPI_COMM_WORLD, &procCount);
+
+#ifdef __APPLE__
+  set_proc_affinity(procId);
+#endif
 
   const int n = std::stoi(std::string(argv[1]));
 
@@ -128,23 +145,22 @@ int main(int argc, char *argv[]) {
   if (procId == 0) {
     res = new double[n];
 
-    mergeStartTime = MPI_Wtime();
+//    mergeStartTime = MPI_Wtime();
     merge(data, sizes, displacements, procCount, n, res);
-    mergeEndTime = MPI_Wtime();
+//    mergeEndTime = MPI_Wtime();
   }
 
   endTime = MPI_Wtime();
 
   if (procId == 0) {
     std::cout << "Total time " << endTime - startTime << std::endl;
-    std::cout << "Scatter took " << scatterEndTime - scatterStartTime << std::endl;
-    std::cout << "Gather took " << gatherEndTime - gatherStartTime << std::endl;
-    std::cout << "Merge took " << mergeEndTime - mergeStartTime << std::endl;
-//    std::cout << partSize << std::endl;
+//    std::cout << "Scatter took " << scatterEndTime - scatterStartTime << std::endl;
+//    std::cout << "Gather took " << gatherEndTime - gatherStartTime << std::endl;
+//    std::cout << "Merge took " << mergeEndTime - mergeStartTime << std::endl;
   }
 
-  std::cout << "For process " << procId << " radix_sort took " << sortEndTime - sortStartTime << std::endl;
-  std::cout << "Process " << procId << " sorted " << partSize << " items." << std::endl;
+//  std::cout << "For process " << procId << " radix_sort took " << sortEndTime - sortStartTime << std::endl;
+//  std::cout << "Process " << procId << " sorted " << partSize << " items." << std::endl;
 
   MPI_Finalize();
 
