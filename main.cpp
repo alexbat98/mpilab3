@@ -7,11 +7,17 @@
 #include <iomanip>
 #include <set>
 #include <string>
+#include <limits>
 
 #ifdef __APPLE__
 #include <mach/thread_policy.h>
 #include <pthread.h>
 #include <mach/thread_act.h>
+#endif
+
+#ifdef INTEL
+#include <cstdlib>
+#include <xmmintrin.h>
 #endif
 
 void set_proc_affinity(int cpu) {
@@ -29,8 +35,42 @@ void radix_sort(double *array, size_t size) {
 
   uint64_t mask = 65535;
 
+
   for (size_t r = 0; r < 4; r++) {
-    for (size_t i = 0; i < size; i++) {
+#ifdef INTEL
+#pragma unroll
+#pragma noparallel
+  for (int i = 0; i < std::min(L2CACHE_SIZE / OPTIMAL_THREADS / 8, static_cast<int>(size / 4)); i++) {
+    _mm_prefetch((const char *)(data + i * 8), _MM_HINT_T1);
+  }
+#endif
+    const uint64_t vectorizedSize = (size - 16) - ((size - 16) % 4);
+
+#ifdef INTEL
+#pragma noprefetch
+#pragma noparallel
+#endif
+    for (size_t i = 0; i < vectorizedSize; i+=4) {
+#ifdef INTEL
+      _mm_prefetch((const char *)data + L2CACHE_SIZE / OPTIMAL_THREADS / 8 + i * 8, _MM_HINT_T1);
+      _mm_prefetch((const char *)data + i * 8 + 16, _MM_HINT_T0);
+#endif
+      uint64_t c[4];
+      c[0] = (data[i] & mask) >> (r * 16);
+      c[1] = (data[i+1] & mask) >> (r * 16);
+      c[2] = (data[i+2] & mask) >> (r * 16);
+      c[3] = (data[i+3] & mask) >> (r * 16);
+      rad[c[0]].push(data[i]);
+      rad[c[1]].push(data[i]);
+      rad[c[2]].push(data[i]);
+      rad[c[3]].push(data[i]);
+      usedIdx.insert(c[0]);
+      usedIdx.insert(c[1]);
+      usedIdx.insert(c[2]);
+      usedIdx.insert(c[3]);
+    }
+
+    for (size_t i = vectorizedSize; i < size; i++) {
       uint64_t c = (data[i] & mask) >> (r * 16);
       rad[c].push(data[i]);
       usedIdx.insert(c);
@@ -59,7 +99,7 @@ void merge(const double* data, const int* sizes, const int* displacements, int p
   }
 
   for (int i = 0; i < n; i++) {
-    double min = 1000000000000;
+    double min = std::numeric_limits<double>::max();
     int idx = 0;
     for (int k = 0; k < p; k++) {
       if (min > data[pointers[k]] && pointers[k] < displacements[k] + sizes[k]) {
@@ -125,7 +165,11 @@ int main(int argc, char *argv[]) {
   int receiveCount =
       procId == procCount - 1 ? (partSize + tail) : partSize;
 
+#ifndef INTEL
   auto *receiveBuffer = new double[receiveCount];
+#else
+  auto * receiveBuffer = reinterpret_cast<double*>(_mm_malloc(receiveCount*sizeof(double), 64));
+#endif
 
 //  scatterStartTime = MPI_Wtime();
   MPI_Scatterv(data, sizes, displacements, MPI_DOUBLE, receiveBuffer, receiveCount, MPI_DOUBLE, 0,
