@@ -20,11 +20,13 @@
 #include <xmmintrin.h>
 #endif
 
+#ifdef __APPLE__
 void set_proc_affinity(int cpu) {
   thread_affinity_policy_data_t policy_data = { cpu };
   int self = pthread_mach_thread_np(pthread_self());;
   thread_policy_set(static_cast<thread_act_t>(self), THREAD_AFFINITY_POLICY, (thread_policy_t)&policy_data, THREAD_AFFINITY_POLICY_COUNT);
 }
+#endif
 
 void radix_sort(double *array, size_t size) {
 
